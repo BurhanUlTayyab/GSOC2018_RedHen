@@ -10,7 +10,7 @@
 
 #define BLACK 20.0
 #define YELLOW 70.0
-
+ 
 #define min_f(a, b, c)  (fminf(a, fminf(b, c)))
 #define max_f(a, b, c) (fmaxf(a, fmaxf(b, c)))
 
@@ -18,6 +18,17 @@
 int xflag = 0;
 int last_index =0;
 int skip_frames = 12;
+
+int t_flag = 0;
+
+
+PIX *pix_temp;
+PIX *pixa, *pix1;
+
+l_int32      w, d;
+
+
+
 void rgb2lab(float R, float G, float B,float *L, float *a, float *b){
 	//Conversion to the CIE-LAB color space to get the Luminance
 	float X, Y, Z, fX, fY, fZ;
@@ -131,6 +142,8 @@ void _process_frame_tickertext(AVFrame *frame, int width, int height, int index)
 
 
 
+
+
 	for(i=(92*height)/100;i<height;i++)
 	{
 		for(j=0;j<width;j++)
@@ -189,25 +202,55 @@ void _process_frame_tickertext(AVFrame *frame, int width, int height, int index)
 
          //Detecting Blue Stoppers
          //Skipping Thirty Frames and Detecting Blue Color
-        if (detect_stopper_color(r,g,b) == 1 && index % 30 == 0){
+        if (detect_stopper_color(r,g,b) == 1 && index % 230 == 0 && t_flag == 0){
          //printf("%s\n", "Stopper Detected");  
          xflag = 1;
+         t_flag = 1;
          //Hardcoded Bouding Box Locations
          BOX* box = boxCreate(100, 525, 615, 25);
          PIX* pixd= pixClipRectangle(feat_im, box, NULL);
          last_index = index;
          russian_ocr(pixd, index);
-         sprintf(write_path,"im%04d.jpg",index);
-         pixWrite(write_path,pixd,IFF_JFIF_JPEG);
+         pixGetDimensions(pixd, &w, NULL, &d);
+         pixSaveTiled(pixd, pixa, 1.0, 0, 1,1);
+
+
+
+         //sprintf(write_path,"im%04d.jpg",index);
+         //pixWrite(write_path,pixd,IFF_JFIF_JPEG);
          boxDestroy(&box);
 	 pixDestroy(&pixd);
          stop = 1;
          }
+
+         else if (detect_stopper_color(r,g,b) == 1 && index % 230 == 0 && t_flag == 1){
+         //printf("%s\n", "Stopper Detected");  
+         xflag = 1; 
+         t_flag = 0;
+         //Hardcoded Bouding Box Locations
+         BOX* box = boxCreate(100, 525, 615, 25);
+         PIX* pixd= pixClipRectangle(feat_im, box, NULL);
+         last_index = index;
+         russian_ocr(pixd, index);
+
+         pixSaveTiled(pixd, pixa, 1.0, 0, 1,1);
+         pix1 = pixaDisplay(pixa, w*2, 0.80*d);
+         sprintf(write_path,"im%04d.jpg",index);
+         pixWrite(write_path,pix1,IFF_JFIF_JPEG);
+        pixa = pixaCreate(5);
+         boxDestroy(&box);
+	 pixDestroy(&pixd);
+	 //pixDestroy(&pixa);
+         stop = 1;
+
+         }
          //Checking of text after blue stopper
-         else if(detect_stopper_color(r,g,b) == 0 && index %11 == 0 && xflag == 1){
+         else if(detect_stopper_color(r,g,b) == 0 && index %230 == 0 && xflag == 1){
          BOX* box = boxCreate(100, 525, 615, 25);
          PIX* pixd= pixClipRectangle(feat_im, box, NULL);
          russian_ocr(pixd, index);
+
+         pixSaveTiled(pixd, pixa, 1.0, 0, 1,1);
          sprintf(write_path,"im%04d.jpg",index);
          pixWrite(write_path,pixd,IFF_JFIF_JPEG);
          boxDestroy(&box);
@@ -238,6 +281,9 @@ int main(int argc, char * argv[]) {
 	int             frameFinished;
 	int             numBytes;
 	uint8_t         *buffer = NULL;
+
+        pixa = pixaCreate(5);
+
     
 	AVDictionary *optionsDict = NULL;
 	struct SwsContext *sws_ctx = NULL;
