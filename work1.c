@@ -19,19 +19,30 @@ int xflag = 0;
 int last_index =0;
 int skip_frames = 12;
 
+
+
+int continue_flag = 0;
+
+int count_frame = 0;
+
+int pre_index;
+
+int pre_flag;
+
 int t_flag = 0;
 
 //Global Offset for Stitching
 int offset = 5;
 
-PIX *pix_temp;
-PIX *pixa, *pix1;
+PIX *pix_temp, pix_temp_a;
+PIX *pixa, *pix1, *second_pix;
 
 l_int32      w, d;
 
 
 
-int stitch_images(PIX* im1, PIX* im2, int index){
+
+float check_frames(PIX* im1, PIX* im2){
   l_int32  type, comptype, d1, d2, same, first, last;
   l_float32    fract, diff, rmsdiff;
   NUMA *na1;
@@ -40,6 +51,52 @@ int stitch_images(PIX* im1, PIX* im2, int index){
 
   d1 = pixGetDepth(im1);
   d2 = pixGetDepth(im2);
+
+  if (d1 == 1 && d2 == 1) {
+   pixEqual(im1, im2, &same);
+        if (same) {
+            return 1;
+        }
+        else {
+                comptype = L_COMPARE_XOR;
+                pixCompareBinary(im1, im2, comptype, &fract, &pixd);
+                return fract;
+        }
+  }
+
+  else {
+           //comptype = L_COMPARE_ABS_DIFF;
+           comptype = L_COMPARE_SUBTRACT;
+           pixCompareGrayOrRGB(im1, im2, comptype, GPLOT_PNG, &same, &diff, &rmsdiff, &pixd);
+            if (same){
+                 return 1;
+            }
+
+            else {
+                fprintf(stderr, "Images differ: <diff> = %10.6f\n", diff);
+                return diff;
+            }
+       }
+  }
+
+
+
+
+int stitch_images(PIX* im1, PIX* im2, int index, int endpoint){
+  l_int32  type, comptype, d1, d2, same, first, last;
+  l_float32    fract, diff, rmsdiff;
+
+  l_int32 a_same;
+  NUMA *na1;
+  PIX *pixd, *pix1;
+       char write_path[100];
+
+  d1 = pixGetDepth(im1);
+  d2 = pixGetDepth(im2);
+
+  printf("%s","MMuna");
+  pixEqual(im1, second_pix, &a_same);
+
 
   if (d1 == 1 && d2 == 1) {
    pixEqual(im1, im2, &same);
@@ -65,13 +122,16 @@ int stitch_images(PIX* im1, PIX* im2, int index){
                 fprintf(stderr, "Images differ: <diff> = %10.6f\n", diff);
                 fprintf(stderr, "               <rmsdiff> = %10.6f\n", rmsdiff);
 
-                 if (diff >= 30){
+                 if (diff >= 20){
                     pixSaveTiled(im1, pixa, 1.0, 0, 1,1);
-                    pixSaveTiled(pixd, pixa, 1.0, 0, 1,1);
+                    pixSaveTiled(im2, pixa, 1.0, 0, 1,1);
                     pix1 = pixaDisplay(pixa, w*2, 0.80*d);
                     sprintf(write_path,"im%04d.jpg",index);
+                    if (count_frame % 2 == 0)
                     pixWrite(write_path,pix1,IFF_JFIF_JPEG);
+                    count_frame++;
                     pixa = pixaCreate(5);
+                    
                 }
             }
 
@@ -87,7 +147,10 @@ int stitch_images(PIX* im1, PIX* im2, int index){
 
             }
        }
-  }
+    }
+
+
+  
 
 return 1;
 
@@ -251,6 +314,7 @@ void _process_frame_tickertext(AVFrame *frame, int width, int height, int index)
 
        int num_of_occr = 0;
        int stop = 0;
+       char write_path[500];
        for(i=(92*height)/100;i<height && !stop;i++){
             for(j=0; j<width  && !stop; j++){
  
@@ -269,6 +333,7 @@ void _process_frame_tickertext(AVFrame *frame, int width, int height, int index)
          //printf("%s\n", "Stopper Detected");  
          xflag = 1;
          t_flag = 1;
+         continue_flag = 0;
          //Hardcoded Bouding Box Locations
          BOX* box = boxCreate(100, 525, 615, 25);
          PIX* pixd= pixClipRectangle(feat_im, box, NULL);
@@ -276,6 +341,7 @@ void _process_frame_tickertext(AVFrame *frame, int width, int height, int index)
          pix_temp = pixCopy(NULL, pixd);
          russian_ocr(pixd, index);
          pixGetDimensions(pixd, &w, NULL, &d);
+         pre_index = index;
 
 
 
@@ -287,38 +353,75 @@ void _process_frame_tickertext(AVFrame *frame, int width, int height, int index)
          stop = 1;
          }
 
-         else if (detect_stopper_color(r,g,b) == 1 && index % (230 + offset) == 0 && t_flag == 1){
+         else if (detect_stopper_color(r,g,b) == 1 && (index > (pre_index + 15)) && t_flag == 1){
          //printf("%s\n", "Stopper Detected");  
-         xflag = 1; 
+
+         if (continue_flag == 0){
          t_flag = 0;
+         printf("%s", "Here");
          //Hardcoded Bouding Box Locations
          BOX* box = boxCreate(100, 525, 615, 25);
          PIX* pixd= pixClipRectangle(feat_im, box, NULL);
          last_index = index;
-         int temp_varx = stitch_images(pix_temp, pixd, index);
          russian_ocr(pixd, index);
+         printf("%f", check_frames(pixd, pix_temp));
 
 
-         
-
+         if (check_frames(pixd, pix_temp) <= 30){
+         t_flag = 0;
+         sprintf(write_path,"im%04d.jpg",pre_index);
+         if (count_frame % 2 == 0) {
+         pixWrite(write_path,pix_temp,IFF_JFIF_JPEG);
+              }
+         count_frame++;
+         }
+ 
+         else{
+         t_flag = 0;
+         sprintf(write_path,"im%04d.jpg",pre_index);
+         if (count_frame % 2 == 0) {
+         pixWrite(write_path,pix_temp,IFF_JFIF_JPEG);
+         sprintf(write_path,"im%04d.jpg",index);
+         pixWrite(write_path,pixd,IFF_JFIF_JPEG);
+         }
+         count_frame++;
+         pix_temp = pixCopy(NULL, pixd);
          boxDestroy(&box);
 	 pixDestroy(&pixd);
-	 //pixDestroy(&pixa);
-         stop = temp_varx;
-
+         continue_flag = 0;
+               }
          }
+     
+         else if (continue_flag == 1){
+         t_flag = 0;
+         BOX* box = boxCreate(100, 525, 615, 25);
+         PIX* pixd= pixClipRectangle(feat_im, box, NULL);
+         last_index = index;
+         int temp_varx = stitch_images(pix_temp, pixd, index,1);
+         russian_ocr(pixd, index);
+         boxDestroy(&box);
+	 pixDestroy(&pixd);
+         stop = temp_varx;
+         continue_flag = 0;
+         }
+
+       }
          //Checking of text after blue stopper
-         else if(detect_stopper_color(r,g,b) == 0 && index % (230 + offset) == 0 && xflag == 1){
+         else if(detect_stopper_color(r,g,b) == 0 && index % (230) == 0 && xflag == 1){
+         continue_flag = 1;
          BOX* box = boxCreate(100, 525, 615, 25);
          PIX* pixd= pixClipRectangle(feat_im, box, NULL);
          russian_ocr(pixd, index);
+         int temp_varx = stitch_images(pix_temp, pixd, index,0);
+         russian_ocr(pixd, index);
+         pre_index = index;
 
-         pixSaveTiled(pixd, pixa, 1.0, 0, 1,1);
+         pix_temp = pixCopy(NULL, pixd);
+         //pixSaveTiled(pixd, pixa, 1.0, 0, 1,1);
          //sprintf(write_path,"im%04d.jpg",index);
          //pixWrite(write_path,pixd,IFF_JFIF_JPEG);
          boxDestroy(&box);
 	 pixDestroy(&pixd);
-         xflag = 0;
          stop = 1;
         }
      }
@@ -346,7 +449,7 @@ int main(int argc, char * argv[]) {
 	uint8_t         *buffer = NULL;
 
         pixa = pixaCreate(5);
-
+        second_pix = pixaCreate(5);
     
 	AVDictionary *optionsDict = NULL;
 	struct SwsContext *sws_ctx = NULL;
